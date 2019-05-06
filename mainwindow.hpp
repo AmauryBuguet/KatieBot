@@ -5,6 +5,7 @@
 #include <QtWidgets>
 #include "fullchart.hpp"
 #include "pushbullet.hpp"
+#include "unistd.h"
 
 using namespace std;
 
@@ -34,6 +35,7 @@ public:
     void get_klines();
     void get_market();
     void get_account();
+    void check_order(long id);
     void init_chart();
     void update_chart();
     void check_time();
@@ -44,13 +46,11 @@ public:
     void update_infos();
     void send_buy_order();
     void send_sell_order();
-    void trade_buy(double &price);
-    void trade_sell(double &price);
+    void trade_buy();
+    void trade_sell();
     void trade_hull(double &curr_price, double &hma1, double &hma2);
 
 private:
-    string _api_key = "key";
-    string _secret_key = "secret";
     vector<Kline> _klines;
     QPushButton *_btn_resetview;
     FullChart *_price_chart;
@@ -60,14 +60,13 @@ private:
     QLabel *_show_trade_count;
     QGridLayout *_glayout;
     QGridLayout *_main_layout;
-
     QTimer *_timer_wait;
     QTimer *_timer_check;
 
     double _last_buy_price = 0.0;
     double _last_buy_volume = 0.0;
-    double _last_short_price = 0.0;
-    double _last_short_volume = 0.0;
+    double _last_sell_price = 0.0;
+    double _last_sell_volume = 0.0;
     double _trade_count = 0.0;
 
     double _ask_price;
@@ -84,10 +83,14 @@ private:
     const char *_pair = "ETHUSDT";
 
     Position _current_move = STOPPED_LONGING;
+    double _initial_balance;
     double _balance_fiat = 175.0;
     double _balance_crypto = 0.0;
 
-    Pushbullet _pushbullet = Pushbullet("api_key");
+    string _api_key = "";
+    string _secret_key = "";
+
+    Pushbullet _pushbullet = Pushbullet("");
 };
 
 #endif // MAINWINDOW_H

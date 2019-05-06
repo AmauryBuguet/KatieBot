@@ -52,15 +52,9 @@ MainWindow::MainWindow()
     window->setLayout(_main_layout);
     setCentralWidget(window);
 
-    BinaCPP::init(_api_key , _secret_key);
-
-    get_klines();
-    get_market();
-
-
-    _pushbullet.push_note("Katie", "test curl");
     get_account();
-    //init_chart();
+    init_chart();
+    _initial_balance = _balance_fiat;
 
     _timer_wait = new QTimer(this);
     _timer_wait->setInterval(3600000);
@@ -211,7 +205,7 @@ void MainWindow::update_chart()
 
 void MainWindow::update_infos()
 {
-    _show_balance->setText(QString::number(_balance_fiat) + " €\n" + QString::number(_balance_crypto) + " BTC");
+    _show_balance->setText(QString::number(_balance_fiat) + " €\n" + QString::number(_balance_crypto) + " ETH");
     double days_since_first_trade = (QDateTime::currentSecsSinceEpoch() - _oldest)/86400.0;
     _show_trade_count->setText("Trades Count : " + QString::number(_trade_count) + "\nAvg : "
                                + QString::number(_trade_count/days_since_first_trade) + " / day");
