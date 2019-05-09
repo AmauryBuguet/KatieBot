@@ -23,7 +23,7 @@ void MainWindow::get_klines()
         kline.closeprice = QString::fromStdString(result[i][4].asString().c_str()).toDouble();
         buffer.push_back(kline);
     }
-    if (_latest_finished_period == buffer[buffer.size() - 2].time){
+    if (_lfp_time == buffer[buffer.size() - 2].time){
         qDebug() << QDateTime::currentDateTime() << "no new data, retrying in 1s";
         sleep(1);
         get_klines();
@@ -55,9 +55,9 @@ void MainWindow::get_account()
 
     BinaCPP::get_account(recvWindow, result);
     balances = result["balances"];
-
+    cout << result;
     for ( int i = 0 ; i < balances.size() ; i++ ) {
-        if (QString::fromStdString(balances[i]["asset"].asString().c_str()) == "ETH"){
+        if (QString::fromStdString(balances[i]["asset"].asString().c_str()) == "BTC"){
             _balance_crypto = QString::fromStdString(balances[i]["free"].asString().c_str()).toDouble();
             qDebug() << "balance eth :" << _balance_crypto;
         }
@@ -68,7 +68,7 @@ void MainWindow::get_account()
     }
 }
 
-void MainWindow::send_buy_order()
+bool MainWindow::send_buy_order()
 {
 
     BinaCPP::init(_api_key , _secret_key);
@@ -78,8 +78,12 @@ void MainWindow::send_buy_order()
 
     //determine buy volume
     double buy_volume = (_balance_fiat * 0.99) / (1.001*_ask_price);
+    buy_volume = floor(buy_volume * 10000) / 10000;
+    if (buy_volume * _ask_price < 10){
+        return false;
+    }
 
-    BinaCPP::send_order("ETHUSDT", "BUY", "MARKET", "GTC", buy_volume , 0, "", 0, 0, recvWindow, result );
+    BinaCPP::send_order(_pair, "BUY", "MARKET", "GTC", buy_volume , 0, "", 0, 0, recvWindow, result );
     //                   pair ,buy/sell, market/limit, gtc, qty, price, ....)
     cout << result << endl;
 
@@ -87,13 +91,15 @@ void MainWindow::send_buy_order()
     if ((QString::fromStdString(result["status"].asString().c_str())) == "FILLED"){
         _last_buy_price = QString::fromStdString(result["fills"][0]["price"].asString().c_str()).toDouble();
         qDebug() << "buy order successful";
+        _last_buy_volume = buy_volume;
+        return true;
     }
+    else return false;
     //else check_order(QString::fromStdString(result["orderId"].asString().c_str()).toLong());
 
-    _last_buy_volume = buy_volume;
 }
 
-void MainWindow::send_sell_order()
+bool MainWindow::send_sell_order()
 {
 
     BinaCPP::init(_api_key , _secret_key);
@@ -102,8 +108,9 @@ void MainWindow::send_sell_order()
     long recvWindow = 10000;
 
     double sell_volume = _balance_crypto;
+    sell_volume = floor(sell_volume * 10000) / 10000;
 
-    BinaCPP::send_order("ETHUSDT", "SELL", "MARKET", "GTC", sell_volume , 0, "", 0, 0, recvWindow, result );
+    BinaCPP::send_order(_pair, "SELL", "MARKET", "GTC", sell_volume , 0, "", 0, 0, recvWindow, result );
     cout << result << endl;
 
     //check if order is filled
@@ -111,10 +118,12 @@ void MainWindow::send_sell_order()
         _last_sell_price = QString::fromStdString(result["fills"][0]["price"].asString().c_str()).toDouble();
         qDebug() << "sell order successful";
         qDebug() << "sell price" << _last_sell_price;
+        _last_sell_volume = sell_volume;
+        return true;
     }
+    else return false;
     //else check_order(QString::fromStdString(result["orderId"].asString().c_str()).toLong());
 
-    _last_sell_volume = sell_volume;
 }
 
 void MainWindow::check_order(long id)

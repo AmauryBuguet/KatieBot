@@ -53,11 +53,12 @@ MainWindow::MainWindow()
     setCentralWidget(window);
 
     get_account();
+    //get_market();
     init_chart();
-    _initial_balance = _balance_fiat;
+    _initial_balance = _balance_fiat + _balance_crypto * _bid_price;
 
     _timer_wait = new QTimer(this);
-    _timer_wait->setInterval(3600000);
+    _timer_wait->setInterval(900000);
 
     _timer_check = new QTimer(this);
     _timer_check->setInterval(1000);
@@ -82,43 +83,62 @@ void MainWindow::init_chart()
         long currtime = it->time;
 
 
-        if (current_period > (_hull_period + sqrt(_hull_period))) {
-
-            //HMA1
-            double hma1 = 0.0;
-            double total = 0.0;
-            for (int i = 1; i < (sqrt(_hull_period)+1); ++i){
-                total += i;
-                hma1 += i * ((compute_wma(current_period - sqrt(_hull_period) + i, (_hull_period / 2))) * 2 -
-                            compute_wma(current_period - sqrt(_hull_period) + i, _hull_period));
+        // indicators
+        if (current_period < _tema_period) {
+            _last_ema1 += it->closeprice / _tema_period;
+        }
+        if (current_period >= _tema_period) {
+            double ema1 = (it->closeprice - _last_ema1) * (2.0 / (_tema_period + 1.0)) + _last_ema1;
+            _last_ema1 = ema1;
+            if (current_period >= _tema_period && current_period < _tema_period * 2) {
+                _last_ema2 += ema1 / _tema_period;
             }
-            hma1 = hma1/total;
+            if (current_period >= _tema_period * 2) {
+                double ema2 = (ema1 - _last_ema2) * (2.0 / (_tema_period + 1.0)) + _last_ema2;
+                _last_ema2 = ema2;
+                if (current_period >= _tema_period * 2 && current_period < _tema_period * 3) {
+                    _last_ema3 += ema2 / _tema_period;
+                }
+                if (current_period >= _tema_period * 3) {
+                    //TEMA
+                    double ema3 = (ema2 - _last_ema3) * (2.0 / (_tema_period + 1.0)) + _last_ema3;
+                    double tema = 3 * (ema1 - ema2) + ema3;
+                    _last_ema3 = ema3;
 
-            //HMA2
-            double hma2 = 0.0;
-            total = 0.0;
-            for (int i = 1; i < (sqrt(_hull_period2)+1); ++i){
-                total += i;
-                hma2 += i * ((compute_wma(current_period - sqrt(_hull_period2) + i, (_hull_period2 / 2))) * 2 -
-                            compute_wma(current_period - sqrt(_hull_period2) + i, _hull_period2));
+                    //HMA
+                    double hma = 0.0;
+                    double total = 0.0;
+                    for (int i = 1; i < (sqrt(_hull_period)+1); ++i){
+                        total += i;
+                        hma += i * ((compute_wma(current_period - sqrt(_hull_period) + i, (_hull_period / 2))) * 2 -
+                                    compute_wma(current_period - sqrt(_hull_period) + i, _hull_period));
+                    }
+                    hma = hma/total;
+
+                    //chart
+                    _price_chart->setSerie(currtime, it->closeprice );
+                    _price_chart->setSerie2(currtime, hma);
+                    _price_chart->setSerie4(currtime, tema);
+
+                    //setup trading
+                    if (hma <= tema){
+                        _current_move = STOPPED_LONGING;
+                        if (_balance_crypto > 0.0015){
+                            _current_move = LONG;
+                            _last_buy_price = _ask_price;
+                        }
+                    }
+                    else _current_move = SHORT;
+                }
             }
-            hma2 = hma2/total;
-
-            //chart
-            _price_chart->setSerie(currtime, it->closeprice );
-            _price_chart->setSerie2(currtime, hma1);
-            _price_chart->setSerie4(currtime, hma2);
-
-            //setup trading
-            if (hma1 < hma2){
-                _current_move = STOPPED_LONGING;
-            }
-            else _current_move = SHORT;
         }
     }
+
     _oldest = (_klines.back().time) / 1000;
-    _latest_finished_period = (_klines[_klines.size() - 2].time);
+    _lfp_time = (_klines[_klines.size() - 2].time);
     update_Xranges();
+    update_infos();
+    qDebug() << _current_move;
 }
 
 double MainWindow::compute_wma(long id, int n)
@@ -156,7 +176,7 @@ void MainWindow::update_Yranges()
 
 void MainWindow::update_Xranges()
 {
-    QDateTime min = QDateTime::fromMSecsSinceEpoch(_klines.back().time).addDays(-1);
+    QDateTime min = QDateTime::fromMSecsSinceEpoch(_klines.back().time).addSecs(-3600*10);
     QDateTime max = QDateTime::fromMSecsSinceEpoch(_klines.back().time);
     _price_chart->setXrange(min, max);
     _viewchanged = false;
@@ -166,46 +186,45 @@ void MainWindow::update_Xranges()
 void MainWindow::update_chart()
 {
     qDebug() << QDateTime::currentDateTime() << "Starting update";
+
     // get prices from Binance
     get_klines();
-    _latest_finished_period = _klines[_klines.size() - 2].time;
-    unsigned long last_finished_period = _klines.size() - 2;
-    long lfp_time = _klines[last_finished_period].time;
+    _lfp_time = _klines[_klines.size() - 2].time;
+    unsigned long _lfp_number = _klines.size() - 2;
 
-    //HMA1
-    double hma1 = 0.0;
+    //HMA
+    double hma = 0.0;
     double total = 0.0;
     for (int i = 1; i < (sqrt(_hull_period)+1); ++i){
         total += i;
-        hma1 += i * ((compute_wma(last_finished_period - sqrt(_hull_period) + i, (_hull_period / 2))) * 2 -
-                    compute_wma(last_finished_period - sqrt(_hull_period) + i, _hull_period));
+        hma += i * ((compute_wma(_lfp_number - sqrt(_hull_period) + i, (_hull_period / 2))) * 2 -
+                    compute_wma(_lfp_number - sqrt(_hull_period) + i, _hull_period));
     }
-    hma1 = hma1/total;
+    hma = hma/total;
 
-    //HMA2
-    double hma2 = 0.0;
-    total = 0.0;
-    for (int i = 1; i < (sqrt(_hull_period2)+1); ++i){
-        total += i;
-        hma2 += i * ((compute_wma(last_finished_period - sqrt(_hull_period2) + i, (_hull_period2 / 2))) * 2 -
-                    compute_wma(last_finished_period - sqrt(_hull_period2) + i, _hull_period2));
-    }
-    hma2 = hma2/total;
+    //TEMA
+    double ema1 = (_klines[_lfp_number].closeprice - _last_ema1) * (2.0 / (_tema_period + 1.0)) + _last_ema1;
+    _last_ema1 = ema1;
+    double ema2 = (ema1 - _last_ema2) * (2.0 / (_tema_period + 1.0)) + _last_ema2;
+    _last_ema2 = ema2;
+    double ema3 = (ema2 - _last_ema3) * (2.0 / (_tema_period + 1.0)) + _last_ema3;
+    double tema = 3 * (ema1 - ema2) + ema3;
+    _last_ema3 = ema3;
 
     //trading
-    trade_hull(_klines[last_finished_period].closeprice, hma1, hma2);
+    trade_hull(_klines[_lfp_number].closeprice, hma, tema);
 
     //chart
-    _price_chart->setSerie(lfp_time, _klines[_klines.size() - 2].closeprice );
-    _price_chart->setSerie2(lfp_time, hma1);
-    _price_chart->setSerie4(lfp_time, hma2);
+    _price_chart->setSerie(_lfp_time, _klines[_lfp_number].closeprice );
+    _price_chart->setSerie2(_lfp_time, hma);
+    _price_chart->setSerie4(_lfp_time, tema);
     update_Xranges();
     qDebug() << QDateTime::currentDateTime() << "update and trade finished";
 }
 
 void MainWindow::update_infos()
 {
-    _show_balance->setText(QString::number(_balance_fiat) + " €\n" + QString::number(_balance_crypto) + " ETH");
+    _show_balance->setText(QString::number(_balance_fiat) + " $\n" + QString::number(_balance_crypto) + " BTC");
     double days_since_first_trade = (QDateTime::currentSecsSinceEpoch() - _oldest)/86400.0;
     _show_trade_count->setText("Trades Count : " + QString::number(_trade_count) + "\nAvg : "
                                + QString::number(_trade_count/days_since_first_trade) + " / day");
@@ -217,10 +236,10 @@ void MainWindow::update_infos()
 void MainWindow::check_time()
 {
     long curr_time = QDateTime::currentDateTime().toSecsSinceEpoch();
-    if (((curr_time - 2) % 3600) == 0 || ((curr_time - 3) % 3600) == 0){
+    if (((curr_time - 2) % 900) == 0 || ((curr_time - 3) % 900) == 0){
         _timer_check->stop();
         _timer_wait->start();
-        qDebug() << "1H timer started";
+        qDebug() << "3min-timer started";
         update_chart();
     }
 }

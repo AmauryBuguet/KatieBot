@@ -44,11 +44,11 @@ public:
     void update_Yranges();
     void update_Xranges();
     void update_infos();
-    void send_buy_order();
-    void send_sell_order();
+    bool send_buy_order();
+    bool send_sell_order();
     void trade_buy();
     void trade_sell();
-    void trade_hull(double &curr_price, double &hma1, double &hma2);
+    void trade_hull(double &curr_price, double &hma, double &tema);
 
 private:
     vector<Kline> _klines;
@@ -63,7 +63,7 @@ private:
     QTimer *_timer_wait;
     QTimer *_timer_check;
 
-    double _last_buy_price = 0.0;
+    double _last_buy_price = 10000.0;
     double _last_buy_volume = 0.0;
     double _last_sell_price = 0.0;
     double _last_sell_volume = 0.0;
@@ -73,14 +73,17 @@ private:
     double _bid_price;
 
     long _oldest = 0;
-    long _latest_finished_period = 0.0;
+    long _lfp_time = 0.0;
     bool _viewchanged = false;
 
-    int _hull_period = 36;
-    int _hull_period2 = 9;
+    int _hull_period = 100;
+    int _tema_period = 20;
+    double _last_ema1 = 0.0;
+    double _last_ema2 = 0.0;
+    double _last_ema3 = 0.0;
 
-    const char *_interval = "1h";
-    const char *_pair = "ETHUSDT";
+    const char *_interval = "15m";
+    const char *_pair = "BTCUSDT";
 
     Position _current_move = STOPPED_LONGING;
     double _initial_balance;
